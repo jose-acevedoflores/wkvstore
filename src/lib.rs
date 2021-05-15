@@ -71,6 +71,15 @@ impl<V> StoreAccessor<V> for KVStore<V> {
             .get(key).map(|e| Arc::clone(e))
     }
 
+    fn read_cb(&self, key: &str, callback: impl FnOnce(Option<&V>)) {
+        let read_g = self.backing_struct
+            .read()
+            .unwrap();
+
+        let val = read_g.map
+            .get(key).map(|a| a.as_ref());
+        callback(val);
+    }
 }
 
 trait StoreAccessor<V> {
@@ -79,6 +88,8 @@ trait StoreAccessor<V> {
     fn delete(&self, key: &str) -> Option<Arc<V>>;
 
     fn read(&self, key: &str) -> Option<Arc<V>>;
+
+    fn read_cb(&self,  key: &str, callback: impl FnOnce(Option<&V>));
 }
 
 #[derive(Clone)]
@@ -108,6 +119,10 @@ impl<V> KVClient<V> {
     pub fn delete(&self, key: &str) -> Option<Arc<V>> {
         self.store.delete(key)
     }
+
+    pub fn retrieve_with_cb(&self, key: &str, callback: impl FnOnce(Option<&V>)) {
+        self.store.read_cb(key, callback);
+    }
 }
 
 
@@ -130,6 +145,9 @@ mod tests {
         let res = client.retrieve(test_key).expect("To be present");
 
         assert_eq!(*res, vec![34, 89]);
+        client.retrieve_with_cb(test_key, |val|{
+            assert_eq!(*val.unwrap(), vec![34, 89]);
+        });
 
         let deleted = client.delete(test_key).expect("Test key to be present");
         assert_eq!(*deleted, vec![34, 89]);
