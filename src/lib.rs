@@ -107,6 +107,11 @@ impl<V: Send + Sync + 'static> StoreAccessor<V> for KVStore<V> {
         let val = read_g.map.get(key).map(|a| a.as_ref());
         callback(val);
     }
+
+    fn size(&self) -> usize {
+        let read_g = self.backing_struct.read().unwrap();
+        read_g.map.len()
+    }
 }
 
 trait StoreAccessor<V: Send + Sync + 'static> {
@@ -117,6 +122,8 @@ trait StoreAccessor<V: Send + Sync + 'static> {
     fn read(&self, key: &str) -> Option<Arc<V>>;
 
     fn read_cb(&self, key: &str, callback: impl FnOnce(Option<&V>));
+
+    fn size(&self) -> usize;
 }
 
 #[derive(Clone)]
@@ -151,6 +158,10 @@ impl<V: Send + Sync + 'static> KVClient<V> {
 
     pub fn retrieve_with_cb(&self, key: &str, callback: impl FnOnce(Option<&V>)) {
         self.store.read_cb(key, callback);
+    }
+
+    pub fn size(&self) -> usize {
+        self.store.size()
     }
 }
 
