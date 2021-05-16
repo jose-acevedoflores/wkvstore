@@ -4,6 +4,7 @@ use rand;
 use rand::prelude::IteratorRandom;
 use rand::rngs::ThreadRng;
 use rand::Rng;
+use std::fmt::Formatter;
 use std::fs::File;
 use std::io::Write;
 use std::ops::Add;
@@ -15,12 +16,34 @@ use wkvstore::{KVClient, KVStore};
 
 //PARAMS
 const NUMBER_OF_KEYS: u32 = 6_000_000;
-const SAMPLES: u32 = 10_000;
+const SAMPLES: u32 = 1_000_000;
 const NUM_THREADS: u8 = 3;
 const MAX_SLEEP_MILLIS: u64 = 5;
 
-fn random_mutation(sample: u32, client: &KVClient<Vec<u8>>, keys: &Vec<String>, rng: &mut ThreadRng) {
+pub struct Stat {
+    tid: u8,
+    timestamp: u128,
+    key: String,
+    val_stringified: String,
+    retrieve_duration_nanos: u128,
+}
 
+impl std::fmt::Display for Stat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}, thread{}, key, {}, val, {:?}, get duration, {} nanos\n",
+            self.timestamp, self.tid, self.key, self.val_stringified, self.retrieve_duration_nanos
+        )
+    }
+}
+
+fn random_mutation(
+    sample: u32,
+    client: &KVClient<Vec<u8>>,
+    keys: &Vec<String>,
+    rng: &mut ThreadRng,
+) {
     if sample % 5 != 0 {
         return;
     }
@@ -28,17 +51,15 @@ fn random_mutation(sample: u32, client: &KVClient<Vec<u8>>, keys: &Vec<String>, 
     let insert_or_delete = rng.gen_ratio(1, 2);
     let k = keys.iter().choose(rng).unwrap();
     if insert_or_delete {
-        client.insert(k, k.as_bytes().to_vec());
+        let exp = Duration::from_secs(rng.gen_range(1..18))
+            .add(Duration::from_millis(rng.gen_range(100..900)));
+        client.insert_with_expiration(k, k.as_bytes().to_vec(), exp);
     } else {
         client.delete(k);
     }
 }
 
-fn spawn_run(
-    num: u8,
-    store: &KVStore<Vec<u8>>,
-    keys: Vec<String>,
-) -> JoinHandle<Vec<(String, u128)>> {
+fn spawn_run(num: u8, store: &KVStore<Vec<u8>>, keys: Vec<String>) -> JoinHandle<Vec<Stat>> {
     let c1 = store.get_client();
     thread::spawn(move || {
         let mut rng = rand::thread_rng();
@@ -51,17 +72,15 @@ fn spawn_run(
             let val = c1.retrieve(key);
             let dur = start.elapsed();
             random_mutation(sample, &c1, &keys, &mut rng);
-            let out = format!(
-                "thread{} key {} val {:?} in {} nanos\n",
-                num,
-                key,
-                val,
-                dur.as_nanos()
-            );
-            // if v.is_none() {
-            // println!("Handle{} {} ", num, s);
-            // }
-            results.push((out, dur.as_nanos()));
+
+            let stat = Stat {
+                tid: num,
+                key: key.to_string(),
+                val_stringified: format!("{:?}", val),
+                retrieve_duration_nanos: dur.as_nanos(),
+                timestamp: 0,
+            };
+            results.push(stat);
         }
         results
     })
@@ -104,25 +123,32 @@ fn setup(client: &KVClient<Vec<u8>>) -> Vec<String> {
     keys_to_be_sampled
 }
 
-fn collect_stats(results: Vec<Vec<(String, u128)>>) {
+fn collect_stats(results: Vec<Vec<Stat>>, store_starting_size: usize, store_end_size: usize) {
     let mut max = 0;
     let mut avg = 0;
     let mut n = 0;
-    let mut file = File::create(get_file_name()).unwrap();
+    let file_name = get_file_name();
+    let mut file = File::create(&file_name).unwrap();
 
     for mut result in results {
         n += result.len() as u128;
-        result.drain(..).for_each(|(out, dur)| {
-            if dur > max {
-                max = dur;
+        result.drain(..).for_each(|stat| {
+            if stat.retrieve_duration_nanos > max {
+                max = stat.retrieve_duration_nanos;
             }
-            avg += dur;
-            file.write(out.as_bytes()).unwrap();
+            avg += stat.retrieve_duration_nanos;
+            file.write(stat.to_string().as_bytes()).unwrap();
         });
     }
 
-    let done = format!("Stats: max={}ns avg={}ns", max, avg / n);
-    log(&done);
+    let done = format!(
+        "Stats: max={}ns avg={}ns. Store sizes = start:{} and end{}",
+        max,
+        avg / n,
+        store_starting_size,
+        store_end_size
+    );
+    log(&format!("{}. Saved to file at {}", done, file_name));
     file.write(done.as_bytes()).unwrap();
 }
 
@@ -131,7 +157,8 @@ fn max_load() {
     let client = store.get_client();
     log("Perform setup");
     let keys = setup(&client);
-    log(&format!("Setup complete {} ", client.size()));
+    let store_starting_size = client.size();
+    log(&format!("Setup complete {} ", store_starting_size));
 
     log(&format!("Spawning {} threads", NUM_THREADS));
     let handles: Vec<_> = (0..NUM_THREADS)
@@ -147,7 +174,7 @@ fn max_load() {
         .collect();
 
     log("Results done, collecting stats");
-    collect_stats(results);
+    collect_stats(results, store_starting_size, client.size());
     log(&format!("stats done, store size {}", client.size()));
 }
 
