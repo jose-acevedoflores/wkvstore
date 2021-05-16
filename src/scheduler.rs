@@ -1,6 +1,6 @@
 use tokio::runtime;
-use tokio::time::sleep;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 
 pub struct ScheduledExecutor {
     pub runtime: runtime::Runtime,
@@ -14,8 +14,8 @@ impl ScheduledExecutor {
     }
 
     pub fn submit_task<F>(&self, task: F, timeout: std::time::Duration) -> JoinHandle<()>
-        where
-            F: FnOnce() -> () + Send + 'static,
+    where
+        F: FnOnce() -> () + Send + 'static,
     {
         self.runtime.spawn(async move {
             sleep(timeout).await;
