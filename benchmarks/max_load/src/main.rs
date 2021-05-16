@@ -2,6 +2,7 @@ use chrono::prelude::*;
 
 use rand;
 use rand::prelude::IteratorRandom;
+use rand::rngs::ThreadRng;
 use rand::Rng;
 use std::fs::File;
 use std::io::Write;
@@ -11,7 +12,6 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use wkvstore;
 use wkvstore::{KVClient, KVStore};
-use rand::rngs::ThreadRng;
 
 //PARAMS
 const NUMBER_OF_KEYS: u32 = 6_000_000;
@@ -19,9 +19,13 @@ const SAMPLES: u32 = 10_000;
 const NUM_THREADS: u8 = 3;
 const MAX_SLEEP_MILLIS: u64 = 5;
 
+fn random_mutation(sample: u32, client: &KVClient<Vec<u8>>, keys: &Vec<String>, rng: &mut ThreadRng) {
 
-fn random_mutation (client: &KVClient<Vec<u8>>, keys: &Vec<String>, rng: &mut ThreadRng) {
-    let insert_or_delete = rng.gen_ratio(1,2);
+    if sample % 5 != 0 {
+        return;
+    }
+
+    let insert_or_delete = rng.gen_ratio(1, 2);
     let k = keys.iter().choose(rng).unwrap();
     if insert_or_delete {
         client.insert(k, k.as_bytes().to_vec());
@@ -41,26 +45,23 @@ fn spawn_run(
         let mut results = Vec::new();
         for sample in 0..SAMPLES {
             // thread::sleep(Duration::from_millis(rng.gen_range(1..MAX_SLEEP_MILLIS)));
-            let k = keys.iter().choose(&mut rng).unwrap();
+            let key = keys.iter().choose(&mut rng).unwrap();
 
             let start = Instant::now();
-            let v = c1.retrieve(k);
+            let val = c1.retrieve(key);
             let dur = start.elapsed();
-            if sample % 5 ==0 {
-                //every 5 samples perform a mutation (write or delete)
-                random_mutation(&c1, &keys, &mut rng);
-            }
-            let s = format!(
+            random_mutation(sample, &c1, &keys, &mut rng);
+            let out = format!(
                 "thread{} key {} val {:?} in {} nanos\n",
                 num,
-                k,
-                v,
+                key,
+                val,
                 dur.as_nanos()
             );
             // if v.is_none() {
             // println!("Handle{} {} ", num, s);
             // }
-            results.push((s, dur.as_nanos()));
+            results.push((out, dur.as_nanos()));
         }
         results
     })
