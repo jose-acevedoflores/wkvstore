@@ -61,6 +61,7 @@ impl<V: Send + Sync + 'static> StoreAccessor<V> for KVStore<V> {
             let k = key.to_string();
             let timeout = exp.unwrap();
 
+            //Use a weak ptr because ff the store is dropped we don't want to have the expire scheduler holding a ref
             let weak_handle = Arc::downgrade(&self.backing_struct);
             let join_h = write_g.expire_scheduler.submit_task(
                 move || {
