@@ -1,3 +1,7 @@
+//! This module is to test different scenarios and gather timings.
+//!
+//! run with `cargo run -p max_load`
+
 use chrono::prelude::*;
 
 use rand;
@@ -15,7 +19,7 @@ use wkvstore;
 use wkvstore::{KVClient, KVStore};
 
 //PARAMS
-const NUMBER_OF_KEYS: u32 = 6_000_000;
+const NUMBER_OF_KEYS: u32 = 10_000_000;
 const SAMPLES: u32 = 1_000_000;
 const NUM_THREADS: u8 = 3;
 const MAX_SLEEP_MILLIS: u64 = 5;
@@ -102,7 +106,7 @@ fn setup(client: &KVClient<Vec<u8>>) -> Vec<String> {
             let keys_with_exp_threshold: f64 = rng.gen();
             if keys_with_exp_threshold > 0.5f64 {
                 Some(
-                    Duration::from_secs(rng.gen_range(60..70))
+                    Duration::from_secs(rng.gen_range(120..300))
                         .add(Duration::from_millis(rng.gen_range(100..900))),
                 )
             } else {
@@ -112,9 +116,9 @@ fn setup(client: &KVClient<Vec<u8>>) -> Vec<String> {
             None
         };
 
-        if let Some(expiration) = should_have_expiration {
+        if let Some(_expiration) = should_have_expiration {
             // println!("WITH EXPIRATION IN {}, key{}", exp.as_secs_f64(), k);
-            client.insert_with_expiration(&key, key.as_bytes().to_vec(), expiration);
+            client.insert(&key, key.as_bytes().to_vec());
         } else {
             client.insert(&key, key.as_bytes().to_vec());
         }
@@ -208,8 +212,3 @@ fn main() {
         start.elapsed().as_secs_f64()
     ));
 }
-
-//RUNS
-// Stats: max=884391ns avg=64145ns      test run: 623.20 seconds (1000 Samples) 100 to 900
-// Stats: max=374247ns avg=67546ns      test run: 5140 (10000 Samples) 100 to 900
-// Stats: max=266953ns avg=33161ns      test run: 1656.25 (10000 Samples) 100 to 200 sleeps

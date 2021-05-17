@@ -1,3 +1,5 @@
+//! Internal module used to encapsulate the tokio_rs dependency.
+//! This could be moved to its own crate.
 use tokio::runtime;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
